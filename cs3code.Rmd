@@ -1,0 +1,84 @@
+---
+title: "Case Study 3"
+author: "Miriam Hu"
+date: "July 13, 2018"
+output: html_document
+---
+
+```{r setup, include = FALSE}
+library(knitr)
+  opts_chunk$set(echo = FALSE, cache = TRUE, autodep = TRUE, 
+                 message = FALSE, warning = FALSE)
+library(tidyverse)
+library(broom)
+library(readxl)
+library(GGally)
+library(gridExtra)
+library(e1071)
+library(lmtest)
+```
+
+```{r load-data, include = FALSE}
+gfr.data <- read_csv("SIBS_GFRdata_2.csv")
+```
+
+```{r clean-data}
+# Make indicator for whether patient has CKD at enrollment and follow-up:
+gfr.data <- mutate(gfr.data, BL_CKD = ifelse(BL_GFR < 60, 1, 0))
+gfr.data <- mutate(gfr.data, FU_CKD = ifelse(BL_GFR < 60, 1, 0))
+
+# Make indicator for whether patient's CKD worsened at follow-up:
+# Recode baseline CKD stages as numbers:
+gfr.data <- mutate(gfr.data, BL_num_CKD = BL_GFR)
+gfr.data$BL_num_CKD <- ifelse(gfr.data$BL_num_CKD >= 120, 0,
+                       ifelse(gfr.data$BL_num_CKD >= 90, 1,
+                       ifelse(gfr.data$BL_num_CKD >= 60, 2,
+                       ifelse(gfr.data$BL_num_CKD >= 45, 3,
+                       ifelse(gfr.data$BL_num_CKD >= 30, 4,
+                       ifelse(gfr.data$BL_num_CKD >= 15, 5, 6))))))
+
+# Recode follow-up CKD stages as numbers:
+gfr.data <- mutate(gfr.data, FU_num_CKD = FU_GFR)
+gfr.data$FU_num_CKD <- ifelse(gfr.data$FU_num_CKD >= 120, 0,
+                       ifelse(gfr.data$FU_num_CKD >= 90, 1,
+                       ifelse(gfr.data$FU_num_CKD >= 60, 2,
+                       ifelse(gfr.data$FU_num_CKD >= 45, 3,
+                       ifelse(gfr.data$FU_num_CKD >= 30, 4,
+                       ifelse(gfr.data$FU_num_CKD >= 15, 5, 6))))))
+
+gfr.data <- mutate(gfr.data, progression = FU_num_CKD - BL_num_CKD) # if positive, CKD got worse
+gfr.data$progression <- ifelse(gfr.data$progression > 0, 1, 0) # 1 for worse; 0 for same or better
+```
+
+## suPAR vs. Baseline GFR
+
+```{r 1-1}
+bl.sim <- lm(BL_GFR ~ suPARpgml + DM + BL_CKD + CRP + suPARpgml*BL_CKD, data = gfr.data)
+tidy(bl.sim) %>% kable(digits = 3)
+```
+
+## suPAR vs. Decline in Kidney Function
+
+```{r 1-2}
+# Create a new variable for the difference in GFR (follow-up – baseline):
+gfr.data$DIFF_GFR <- gfr.data$FU_GFR - gfr.data$BL_GFR # positive indicates improvement
+
+diff.sim <- lm(DIFF_GFR ~ suPARpgml + DM + BL_CKD + CRP + suPARpgml*BL_CKD, 
+               data = gfr.data)
+tidy(diff.sim) %>% kable(digits = 3)
+```
+
+```{r 1-3}
+prog.sim <- glm(progression ~ suPARpgml + DM + BL_CKD + CRP + suPARpgml*BL_CKD, 
+                data = gfr.data, family = "binomial")
+tidy(prog.sim) %>% kable(digits = 3)
+```
+
+# suPAR vs. CKD stage progression among those with no clinical CKD at enrollment
+
+```{r 2}
+no.clinical.ckd <- gfr.data %>% filter(BL_CKD == 0)
+mild <- glm(progression ~ suPARpgml + DM + CRP + HTN, 
+              data = no.clinical.ckd, family = "binomial")
+tidy(mild) %>% kable(digits = 3)
+```
